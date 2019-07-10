@@ -4,7 +4,7 @@ try:
     from . import db, utils, generator
 except ImportError as iex:
     print(iex)
-    print("Please run 'pip install -f requirements.txt'")
+    print("Please run 'pip install -r requirements.txt'")
     exit(1)
 
 database = db

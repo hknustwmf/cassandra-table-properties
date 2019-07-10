@@ -108,7 +108,7 @@ class TablePropertiesCli():
 
         parser.add_argument("-s", "--skiprc",
                             dest="skip_rc",
-                            help="Ignore existing cqlshrc file.",
+                            help="Ignore existing cqlshrc file. Default: true",
                             action="store_true")
 
         parser.add_argument("-r",
@@ -140,7 +140,7 @@ class TablePropertiesCli():
 
         # Set defaults
         parser.set_defaults(force_overwrite=False, use_tls=False,
-                            skip_rc=False, rc_file="~/.cassandra/cqlshrc")
+                            skip_rc=True, rc_file="~/.cassandra/cqlshrc")
 
         return parser
 

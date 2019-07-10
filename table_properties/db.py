@@ -28,7 +28,7 @@ def get_protocol_version(proto_version: int):
 
 
 def get_connection_settings(
-        contact_points: list = None,
+        contact: str = None,
         port: int = None,
         protocol_version=None,
         username: str = None,
@@ -39,7 +39,7 @@ def get_connection_settings(
         rc_config_file: str = None):
     """Construct connection settings dictionary.
     Args:
-        contact_points:   IP addresses or hostnames
+        contact:          IP address or hostname
         port:             port number
         protocol_version: protocol version number
         username:         user name
@@ -59,7 +59,7 @@ def get_connection_settings(
     if rc_config_file:
         rc_config = utils.load_rconfig(rc_config_file)
         if rc_config["connection"]["hostname"]:
-            params["contact_points"] = rc_config["connection"]["hostname"]
+            params["contact"] = rc_config["connection"]["hostname"]
 
         if rc_config["connection"]["port"]:
             try:
@@ -74,10 +74,10 @@ def get_connection_settings(
         conf_username = rc_config["authentication"]["username"]
         conf_password = rc_config["authentication"]["password"]
 
-    if contact_points:
-        params["contact_points"] = contact_points
+    if contact:
+        params["contact"] = contact
         params["load_balancing_policy"] = \
-            cassandra.policies.WhiteListRoundRobinPolicy([contact_points])
+            cassandra.policies.WhiteListRoundRobinPolicy([contact])
 
     if isinstance(port, int):
         params["port"] = port
@@ -231,12 +231,9 @@ def get_cluster(connection_settings: dict) -> cassandra.cluster.Cluster:
         Cluster instance
     """
 
-    cluster = cassandra.cluster.Cluster()
+    cluster = cassandra.cluster.Cluster([connection_settings.get("contact", "127.0.0.1")])
 
     if connection_settings:
-        contact_points = connection_settings.get("contact_points")
-        if contact_points and isinstance(contact_points, list):
-            cluster.contact_points = contact_points
         if connection_settings.get("port", 0) > 0:
             cluster.port = connection_settings.get("port")
         if connection_settings.get("load_balancing_policy"):

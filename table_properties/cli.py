@@ -40,9 +40,9 @@ class TablePropertiesCli():
 
         parser.add_argument("-c",
                             "--contactpoint",
-                            metavar="<ip 1>[,...,<ip n>]",
+                            metavar="<ip>",
                             dest="host_ip",
-                            help="Host IP address(es) or name(s)."
+                            help="Host IP address or name."
                                  "Default: localhost",
                             required=False)
 
@@ -162,7 +162,7 @@ class TablePropertiesCli():
 
                 # Construct the connection parameters
                 conn = tp.db.get_connection_settings(
-                    contact_points=self.args.host_ip,
+                    contact=self.args.host_ip,
                     port=self.args.host_port,
                     protocol_version=self.args.protocol_version,
                     username=self.args.username,

@@ -2,6 +2,7 @@
 """ CLI interface class
 """
 import argparse
+import getpass
 import logging
 import os
 import sys
@@ -40,10 +41,9 @@ class TablePropertiesCli():
 
         parser.add_argument("-c",
                             "--contactpoint",
-                            metavar="<ip 1>[,...,<ip n>]",
+                            metavar="<ip>",
                             dest="host_ip",
-                            help="Host IP address(es) or name(s)."
-                                 "Default: localhost",
+                            help="Host IP address or name. Default: localhost",
                             required=False)
 
         parser.add_argument("-C",
@@ -55,14 +55,8 @@ class TablePropertiesCli():
 
         parser.add_argument("-d",
                             "--dump",
-                            metavar="<filename>",
-                            dest="dump_file",
-                            help="Dump current configuration settings to file",
-                            required=False)
-
-        parser.add_argument("-f", "--force",
-                            dest="force_overwrite",
-                            help="Overwrite dump file if it exists.",
+                            dest="dump_config",
+                            help="Dump current configuration to STDOUT",
                             action="store_true")
 
         parser.add_argument("-k",
@@ -76,8 +70,8 @@ class TablePropertiesCli():
                             "--log",
                             metavar="<filename>",
                             dest="log_file",
-                            help="Log file name. "
-                                 "Default: tp_YYYYMMDD-HHMMSS.log",
+                            help="Log file name. If none is provied, "
+                                 "STDERR is used.",
                             required=False)
 
         parser.add_argument("-p",
@@ -88,27 +82,10 @@ class TablePropertiesCli():
                             help="Port number. Default: 9042",
                             required=False)
 
-        parser.add_argument("-o",
-                            "--protocolversion",
-                            type=int,
-                            choices=range(1, 5),
-                            default=2,
-                            metavar="<protocol version>",
-                            dest="protocol_version",
-                            help="Cassandra driver protocol version (1-5)."
-                                 "Default: 2",
-                            required=False)
-
         parser.add_argument("-P",
                             "--password",
-                            metavar="<password>",
-                            dest="password",
-                            help="Password for plain text authentication.",
-                            required=False)
-
-        parser.add_argument("-s", "--skiprc",
-                            dest="skip_rc",
-                            help="Ignore existing cqlshrc file.",
+                            dest="password_reqd",
+                            help="Prompt for password.",
                             action="store_true")
 
         parser.add_argument("-r",
@@ -138,34 +115,38 @@ class TablePropertiesCli():
                             version="{} {}".format(tp.PROG_NAME,
                                                    tp.PROG_VERSION))
 
-        # Set defaults
-        parser.set_defaults(force_overwrite=False, use_tls=False,
-                            skip_rc=False, rc_file="~/.cassandra/cqlshrc")
-
         return parser
 
     def execute(self, args: list = []) -> None:
         """Execute applicaton
         """
         config_filename = None
+        rc_filename = None
+        password = None
 
         # Load the desired configuration from file
         self.args = TablePropertiesCli.get_arg_parser().parse_args(args)
 
+        log_level = os.environ.get("TP_LOG_LEVEL", tp.utils.DEFAULT_LOG_LEVEL)
+
         # Modify root logger settings
-        tp.utils.setup_logging(self.args.log_file)
+        tp.utils.setup_logging(self.args.log_file,
+                               tp.utils.get_log_level(log_level))
 
         try:
-            if self.args.dump_file or self.args.config_filename:
-                rc_filename = None if self.args.skip_rc else self.args.rc_file
+            if self.args.dump_config or self.args.config_filename:
+                if self.args.rc_file and os.path.isfile(self.args.rc_file):
+                    rc_filename = self.args.rc_file
+
+                if self.args.password_reqd:
+                    password = getpass.getpass(prompt="Password: ")
 
                 # Construct the connection parameters
                 conn = tp.db.get_connection_settings(
                     contact_points=self.args.host_ip,
                     port=self.args.host_port,
-                    protocol_version=self.args.protocol_version,
                     username=self.args.username,
-                    password=self.args.password,
+                    password=password,
                     use_tls=self.args.use_tls,
                     client_cert_file=self.args.client_cert_file,
                     client_key_file=self.args.client_key_file,
@@ -175,15 +156,12 @@ class TablePropertiesCli():
                 # Read current configuration from database
                 current_config = tp.db.get_current_config(conn)
 
-                if self.args.dump_file:
+                if self.args.dump_config:
                     try:
-                        tp.utils.write_yaml(self.args.dump_file,
-                                            current_config,
-                                            self.args.force_overwrite)
+                        print(tp.utils.format_yaml(current_config))
                     except Exception as ex:
                         logging.exception(ex)
-
-                if self.args.config_filename:
+                else:
                     config_filename = self.args.config_filename
                     logging.info("Reading config from '%s'", config_filename)
                     desired_config = tp.utils.load_yaml(config_filename)

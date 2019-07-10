@@ -1,6 +1,4 @@
-# pylint: disable=missing-docstring, invalid-name
-import subprocess
-
+# pylint: disable=missing-docstring, invalid-name, broad-except
 import pytest
 import yaml
 
@@ -17,10 +15,18 @@ def current_config():
     conn_params = db.get_connection_settings()
 
     if db.check_connection(conn_params):
-        subprocess.call(["./tests/scripts/clean_db.sh", "--silent"])
-        subprocess.call(["./tests/scripts/setup_db.sh", "--silent"])
+        try:
+            with open("./tests/setup/cql/drop_excalibur.cql", "r") as f:
+                stmt = f.read()
+            db.exec_stmt(connection=conn_params, cmd_stmt=stmt)
 
-        return db.get_current_config(conn_params, True)
+            with open("./tests/setup/cql/create_excalibur.cql", "r") as f:
+                stmt = f.read()
+            db.exec_stmt(connection=conn_params, cmd_stmt=stmt)
+
+            return db.get_current_config(conn_params, True)
+        except Exception:
+            pass
 
     # Load the mock config
     with open("./tests/mocks/excalibur.yaml", "r") as f:
@@ -32,4 +38,9 @@ def pytest_sessionfinish():
 
     # teardown
     if db.check_connection(conn_params):
-        subprocess.call(["./tests/scripts/clean_db.sh", "--silent"])
+        try:
+            with open("./tests/setup/cql/drop_excalibur.cql", "r") as f:
+                stmt = f.read()
+            db.exec_stmt(connection=conn_params, cmd_stmt=stmt)
+        except Exception:
+            pass

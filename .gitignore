@@ -111,3 +111,13 @@ venv.bak/
 # Coverage reports
 coverage/
 htmlcov/
+
+# Debian build files
+deb_dist/
+debian/.debhelper
+debian/cassandra-table-properties
+debian/cassandra-table-properties.*
+debian/files
+
+# Don't include build output
+cassandra-table-properties-*.tar.gz

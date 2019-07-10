@@ -13,6 +13,9 @@ import cassandra.policies
 
 from table_properties import utils
 
+DEFAULT_HOST = '127.0.0.1'
+DEFAULT_RPC_PORT = 9042
+
 
 def get_protocol_version(proto_version: int):
     """Return protocol version
@@ -30,7 +33,6 @@ def get_protocol_version(proto_version: int):
 def get_connection_settings(
         contact_points: list = None,
         port: int = None,
-        protocol_version=None,
         username: str = None,
         password: str = None,
         use_tls: bool = False,
@@ -59,31 +61,34 @@ def get_connection_settings(
     if rc_config_file:
         rc_config = utils.load_rconfig(rc_config_file)
         if rc_config["connection"]["hostname"]:
-            params["contact_points"] = rc_config["connection"]["hostname"]
+            contact_points = rc_config["connection"]["hostname"]
 
-        if rc_config["connection"]["port"]:
+        if rc_config["connection"]["port"] and not port:
             try:
-                params["port"] = int(rc_config["connection"]["port"])
+                port = int(rc_config["connection"]["port"])
             except ValueError:
                 pass
 
-        if rc_config["connection"]["ssl"]:
-            # use_tls is false by default. Override if defined in rc
-            use_tls = rc_config["connection"]["ssl"]
+        if rc_config["connection"]["ssl"] and not use_tls:
+            # use_tls is false by default. Use rc value if not overriden by
+            # switch setting.
+            use_tls = rc_config["connection"]["ssl"].lower() == "true"
 
         conf_username = rc_config["authentication"]["username"]
         conf_password = rc_config["authentication"]["password"]
 
-    if contact_points:
-        params["contact_points"] = contact_points
-        params["load_balancing_policy"] = \
-            cassandra.policies.WhiteListRoundRobinPolicy([contact_points])
+    if not contact_points:
+        contact_points = [DEFAULT_HOST]
+    if not isinstance(contact_points, list):
+        contact_points = [contact_points]
+    params["contact_points"] = contact_points
+    params["load_balancing_policy"] = \
+        cassandra.policies.WhiteListRoundRobinPolicy(contact_points)
 
     if isinstance(port, int):
         params["port"] = port
 
-    if protocol_version:
-        params["protocol_version"] = protocol_version
+    params["protocol_version"] = cassandra.ProtocolVersion.V4
 
     if (conf_username or username) and (conf_password or password):
         conn_user = username if username else conf_username
@@ -91,12 +96,6 @@ def get_connection_settings(
 
         params["auth_provider"] = \
             cassandra.auth.PlainTextAuthProvider(conn_user, conn_pwrd)
-
-        if not protocol_version:
-            # Auth provider requires at least protocol version 2
-            params["protocol_version"] = cassandra.ProtocolVersion.V2
-        else:
-            params["protocol_version"] = get_protocol_version(protocol_version)
 
     if use_tls:
         if client_cert_file and client_key_file:
@@ -231,23 +230,78 @@ def get_cluster(connection_settings: dict) -> cassandra.cluster.Cluster:
         Cluster instance
     """
 
-    cluster = cassandra.cluster.Cluster()
+    hosts = ['127.0.0.1']
+    port = DEFAULT_RPC_PORT
+    auth_provider = None
+    ssl_context = None
+    lbp = None
+    cluster = None
 
     if connection_settings:
-        contact_points = connection_settings.get("contact_points")
-        if contact_points and isinstance(contact_points, list):
-            cluster.contact_points = contact_points
-        if connection_settings.get("port", 0) > 0:
-            cluster.port = connection_settings.get("port")
+        hosts = connection_settings.get("contact_points")
+
+        if hosts:
+            if isinstance(hosts, str):
+                hosts = [hosts]
+            if not isinstance(hosts, list):
+                raise Exception("Expected a single host or a list of hosts")
+        if connection_settings.get("port"):
+            try:
+                port = int(connection_settings.get("port"))
+            except ValueError:
+                port = DEFAULT_RPC_PORT
         if connection_settings.get("load_balancing_policy"):
-            cluster.load_balancing_policy = \
-                connection_settings.get("load_balancing_policy")
+            lbp = connection_settings.get("load_balancing_policy")
         if connection_settings.get("auth_provider"):
-            cluster.auth_provider = connection_settings.get("auth_provider")
+            auth_provider = connection_settings.get("auth_provider")
         if connection_settings.get("ssl_context"):
-            cluster.ssl_context = connection_settings.get("ssl_context")
+            ssl_context = connection_settings.get("ssl_context")
+
+    cluster = cassandra.cluster.Cluster(hosts, load_balancing_policy=lbp,
+                                        port=port, auth_provider=auth_provider,
+                                        ssl_context=ssl_context)
 
     return cluster
+
+
+def exec_stmt(connection: dict, cmd_stmt: str) -> list:
+    """Execute Cassandra commands
+
+    Args:
+        connection: connection paramters
+        query_stmt: CQL query
+
+    Returns:
+        True if successful. False otherwise
+    """
+    try:
+        cluster = get_cluster(connection)
+
+        with cluster.connect() as session:
+            cmds = cmd_stmt.split(";")
+            for cmd in cmds:
+                act_cmd = cmd.strip()
+                if act_cmd:
+                    session.execute(act_cmd)
+
+            return True
+    except (cassandra.cluster.NoHostAvailable) as ex:
+        if hasattr(ex, "errors") and ex.errors:
+            for err, obj in ex.errors.items():
+                msg = "Host {} responded with '{}'".format(err, str(obj))
+                if isinstance(obj, cassandra.cluster.ConnectionShutdown):
+                    msg += " " if msg[-1] == "." else ". "
+                    msg += "Is SSL/TLS required to connect to the host?"
+                print(msg)
+        else:
+            print(ex)
+        raise Exception("Connection failed")
+
+    except Exception as ex:
+        logging.exception(ex)
+        raise
+
+    return False
 
 
 def exec_query(connection: dict, query_stmt: str) -> list:
@@ -263,20 +317,23 @@ def exec_query(connection: dict, query_stmt: str) -> list:
     try:
         cluster = get_cluster(connection)
 
-        with cluster.connect("system_schema",
-                             wait_for_all_pools=True) as session:
+        with cluster.connect() as session:
             session.row_factory = cassandra.query.ordered_dict_factory
             rows = session.execute(query_stmt)
 
-            return rows.current_rows
+            return rows.current_rows if hasattr(rows, "current_rows") else []
     except (cassandra.cluster.NoHostAvailable) as ex:
-        if hasattr(ex, "errors"):
+        if hasattr(ex, "errors") and ex.errors:
             for err, obj in ex.errors.items():
                 msg = "Host {} responded with '{}'".format(err, str(obj))
                 if isinstance(obj, cassandra.cluster.ConnectionShutdown):
                     msg += " " if msg[-1] == "." else ". "
                     msg += "Is SSL/TLS required to connect to the host?"
                 print(msg)
+        else:
+            print(ex)
+        raise Exception("Connection failed")
+
     except Exception as ex:
         logging.exception(ex)
         raise
@@ -294,22 +351,10 @@ def check_connection(connection: dict):
         True if connection was successful. False otherwise
     """
     try:
-        cluster = get_cluster(connection)
-
-        with cluster.connect():
+        if exec_query(connection, "SELECT cql_version FROM system.local;"):
             return True
-    except (cassandra.cluster.NoHostAvailable) as ex:
-        if hasattr(ex, "errors"):
-            for err, obj in ex.errors.items():
-                msg = "Host {} responded with '{}'".format(err, str(obj))
-                if isinstance(obj, cassandra.cluster.ConnectionShutdown):
-                    msg += " " if msg[-1] == "." else ". "
-                    msg += "Is SSL/TLS required to connect to the host?"
-                print(msg)
-    except Exception as ex:
-        logging.exception(ex)
-        raise
-
+    except Exception:  # pylint: disable=broad-except
+        pass
     return False
 
 
@@ -324,7 +369,7 @@ def get_keyspace_configs(connection: dict) -> dict:
     """
     keyspace_configs = []
 
-    rows = exec_query(connection, "SELECT * FROM keyspaces")
+    rows = exec_query(connection, "SELECT * FROM system_schema.keyspaces;")
     for row in rows:
         ks_name = row.get("keyspace_name").lower()
         if ks_name == "system" or ks_name.startswith("system_"):
@@ -357,8 +402,8 @@ def get_table_configs(connection: dict, keyspace_name: str,
     """
     table_configs = []
 
-    query_stmt = "SELECT * FROM tables WHERE keyspace_name = '{}';" \
-        .format(keyspace_name)
+    query_stmt = "SELECT * FROM system_schema.tables " \
+                 "WHERE keyspace_name = '{}';".format(keyspace_name)
 
     rows = exec_query(connection, query_stmt)
     for row in rows:

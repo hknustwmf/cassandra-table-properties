@@ -62,7 +62,7 @@ cp ./certs/node0.cer.pem $HOME/.cassandra/
 Copy the `cqlsh.sample` file from the tests/setup to `$HOME/.cassandra`
 
 ```shell
-cp tests/setup/cqlshrc.sample $HOME/.cassandra/cqlshrc
+cp tests/setup/cqlshrc $HOME/.cassandra/cqlshrc
 ```
 
 and enable an enable client-cluster encryption in `cqlshrc`

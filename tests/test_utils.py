@@ -1,8 +1,6 @@
 # pylint: disable=missing-docstring, broad-except, invalid-name, no-self-use
 import datetime
-import logging
 import os
-import tempfile
 
 import table_properties.utils as util
 
@@ -30,22 +28,6 @@ class TestInputOutput():
     def test_read_yaml_config(self):
         orig = util.load_yaml("./tests/configs/excalibur_unchanged.yaml")
         assert orig is not None
-
-    def test_write_yaml_config(self):
-        tmp_dir = tempfile.gettempdir()
-        tmp_filename = os.path.join(tmp_dir,
-                                    get_temp_filename(tempfile.gettempprefix())
-                                    )
-
-        orig = util.load_yaml("./tests/configs/excalibur_unchanged.yaml")
-        assert util.write_yaml(tmp_filename, orig)
-        assert orig == util.load_yaml(tmp_filename)
-
-        # Remove temp file
-        try:
-            os.remove(tmp_filename)
-        except Exception as ex:
-            logging.error(ex)
 
     def test_app_path(self):
         assert util.get_app_folder() == os.path.abspath(".")

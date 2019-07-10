@@ -1,0 +1,12 @@
+cassandra-table-properties (0.3-1) UNRELEASED; urgency=medium
+
+  * Simplified switch usage. Fixed bug for non-localhost connections
+  * Added debian packaging support.
+
+ -- Holger Knust <hknust@wikimedia.org>  Thu, 11 Jul 2019 09:16:13 -0400
+
+cassandra-table-properties (0.2-1) UNRELEASED; urgency=medium
+
+  * Initial release.
+
+ -- Holger Knust <hknust@wikimedia.org>  Thu, 11 Jul 2019 09:02:56 -0400

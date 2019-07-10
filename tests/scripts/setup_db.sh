@@ -11,7 +11,7 @@ print() {
 
 ! [[ -x $(command -v cqlsh) ]] && die "cqlsh must be installed"
 
-SCHEMA_DIR=$(pwd)/tests/cql
+SCHEMA_DIR=$(pwd)/tests/setup/cql
 
 [[ ! -d $SCHEMA_DIR ]] && die "Cannot locate create scripts"
 

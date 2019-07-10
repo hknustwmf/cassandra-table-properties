@@ -1,4 +1,4 @@
-CREATE KEYSPACE IF NOT EXISTS excalibur WITH replication = {'class': 'NetworkTopologyStrategy', 'data_center1': '3', 'data_center2': '3'}  AND durable_writes = true;
+CREATE KEYSPACE IF NOT EXISTS excalibur WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}  AND durable_writes = true;
 
 CREATE TABLE IF NOT EXISTS excalibur.monkeyspecies (
     species text PRIMARY KEY,

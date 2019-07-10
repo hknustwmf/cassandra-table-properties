@@ -5,29 +5,63 @@ import configparser
 import json
 import logging
 import os
+import sys
 import time
 import typing
 
-import jsonschema
 import yaml
 
-
 DEFAULT_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-DEFAULT_RCFILE = "~/.cassandra/cqlshrc"
+DEFAULT_LOG_LEVEL = "critical"
 
 
-def setup_logging(log_file: str = "", log_level=logging.DEBUG) -> None:
+def get_log_level(level: str):
+    """Convert log level string to logging constant.
+
+    Args:
+        level: log level string
+    Returns:
+        Matching log level constant or default.
+    """
+    levels = {
+        "notset": logging.NOTSET,
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "warn": logging.WARNING,
+        "error": logging.ERROR,
+        "fatal": logging.FATAL,
+        "critical": logging.CRITICAL
+    }
+
+    if not level or not isinstance(level, str):
+        return levels[DEFAULT_LOG_LEVEL]
+
+    lwr_level = level.lower()
+    if lwr_level not in levels:
+        return levels[DEFAULT_LOG_LEVEL]
+
+    return levels[lwr_level]
+
+
+def setup_logging(log_file: str = None, log_level=None) -> None:
     """Apply log format, set level, and add color to root logger
 
     Args:
         log_file:  optional name of log file
-        log_level: log level defaults to DEBUG
+        log_level: log level
     """
-    log_file = os.path.join(get_app_folder(), log_file if log_file else
-                            get_timestamped_filename("tp", ".log"))
+    hdlrs = []
+    if log_file:
+        hdlrs.append(logging.FileHandler(log_file))
+    else:
+        hdlrs.append(logging.StreamHandler(sys.stderr))
+
+    if not log_level:
+        log_level = get_log_level(DEFAULT_LOG_LEVEL)
 
     logging.basicConfig(format=DEFAULT_LOG_FORMAT,
-                        handlers=[logging.FileHandler(log_file)],
+                        handlers=hdlrs,
                         level=log_level)
 
     # Color codes http://www.tldp.org/HOWTO/Bash-Prompt-HOWTO/x329.html
@@ -48,7 +82,7 @@ def setup_logging(log_file: str = "", log_level=logging.DEBUG) -> None:
         logging.getLevelName(logging.CRITICAL))
 
 
-def get_timestamped_filename(prefix: str = "", ext: str = "") -> str:
+def timestamped_filename(prefix: str = "", ext: str = "") -> str:
     """ Create a timestamped filename with custom prefix and
         extension
 
@@ -116,7 +150,7 @@ def write_file(filename: str, data: dict, overwrite: bool, writer,
     Returns:
         True if write succeeded. False otherwise
     """
-    if os.path.isfile(filename) and not overwrite:
+    if os.path.exists(os.path.abspath(filename)) and not overwrite:
         msg = "Configuration file '{}' already exists.".format(filename) \
             + "Add -f or --force if you like to overwrite the existing file."
         logging.warning(msg)
@@ -145,17 +179,15 @@ def load_yaml(filename: str) -> typing.Optional[dict]:
     return load_file(filename, yaml.safe_load)
 
 
-def write_yaml(filename: str, data: dict, overwrite: bool = False) -> bool:
-    """Write a YAML config file
+def format_yaml(data: dict):
+    """Convert dictionary into formatted YAML
 
     Args:
-        filename: Full path to file
-        data: yaml data to be written
+        data:      yaml data to be formatted
     Returns:
-        True if succeeded. False otherwise
+        Formatted YAML text
     """
-    return write_file(filename, data, overwrite, yaml.dump,
-                      default_flow_style=False)
+    return yaml.dump(data, default_flow_style=False)
 
 
 def load_json(filename: str) -> typing.Optional[dict]:
@@ -167,30 +199,6 @@ def load_json(filename: str) -> typing.Optional[dict]:
         A dict or None.
     """
     return load_file(filename, json.load)
-
-
-def validate_schema(schema: dict, data: dict) -> bool:
-    """Validate data against jsonschema.
-
-    Args:
-        schema: JSON Schema definition
-        data: JSON data to be validated
-
-    Returns:
-        True if valid. False otherwise.
-    """
-    validator = None
-    try:
-        validator = jsonschema.Draft7Validator(schema)
-        validator.validate(data)
-        return True
-    except jsonschema.ValidationError as val_err:
-        logging.exception(val_err)
-        for error in sorted(validator.iter_errors(data), key=str):
-            logging.debug(error.message)
-        raise Exception("Schema validation failed. See log for details.")
-
-    return False
 
 
 def find_by_value(dict_list: list, key: str, value, default_value=None):
@@ -215,9 +223,10 @@ def find_by_value(dict_list: list, key: str, value, default_value=None):
     return default_value
 
 
-def load_rconfig(filename: str = DEFAULT_RCFILE) -> configparser.ConfigParser:
+def load_rconfig(filename: str) -> configparser.ConfigParser:
     """ Load cqlshrc file
     """
+    config = None
     full_rc_filename = os.path.expanduser(filename)
     if os.path.isfile(full_rc_filename):
         config = configparser.ConfigParser()

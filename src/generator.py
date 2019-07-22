@@ -95,7 +95,7 @@ def generate_alter_keyspace_statement(keyspace_name: str,
         stmt += connect_statments(stmt)
         stmt += "{} = {}".format(change["property"], change["desired"])
 
-    return stmt + ";\n" if "WITH " in stmt else ""
+    return stmt + ";\n"
 
 
 def generate_alter_table_statement(keyspace_name: str, current_tables: dict,

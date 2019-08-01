@@ -1,2 +1,0 @@
-cassandra-driver==3.18.0
-PyYAML==5.1.1

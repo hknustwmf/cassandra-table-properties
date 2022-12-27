@@ -8,5 +8,5 @@ pytest==5.0.1
 pytest-cov==2.7.1
 rope==0.14.0
 tox==3.13.1
-setuptools==41.0.1
+setuptools==65.5.1
 setuptools-scm==3.3.3
